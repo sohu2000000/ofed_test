@@ -195,6 +195,11 @@ function print_usage() {
 }
 
 # Parse command line arguments
+if [ $# -eq 0 ]; then
+    print_usage
+    exit 0
+fi
+
 case "$1" in
     --run|-r)
         echo "=== Getting interface information ==="
