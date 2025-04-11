@@ -9,11 +9,11 @@ function usage() {
 }
 
 function rep_intf_init() {
-	local name=$1
-	local index=$2
+	local port_name=$1
+	local sf_index=$2
 	local hw_addr=$3
 	local sfnum=$4
-	echo "name=$name index=$index hw_addr=$hw_addr sfnum=$sfnum"
+	echo "port_name=$port_name sf_index=$sf_index hw_addr=$hw_addr sfnum=$sfnum"
 }
 
 function rep_intf_get() {
@@ -77,8 +77,36 @@ function rep_intf_show() {
 	done
 }
 
+function rep_intf_del() {
+	local i sf_index port_name
+
+	echo "Deleting SF ports..."
+	for ((i=0; i<rep_intf_num; i++)); do
+		# Extract sf_index and port_name from rep_intf struct
+		sf_index=$(echo "${rep_intfs[$i]}" | awk -F'sf_index=' '{print $2}' | awk '{print $1}')
+		port_name=$(echo "${rep_intfs[$i]}" | awk -F'port_name=' '{print $2}' | awk '{print $1}')
+
+		echo "Setting port $port_name to inactive state..."
+		devlink port function set $port_name state inactive
+		if [ $? -ne 0 ]; then
+			echo "Warning: Failed to set port $port_name to inactive state"
+		fi
+
+		echo "Deleting port $port_name..."
+		devlink port del $port_name
+		if [ $? -ne 0 ]; then
+			echo "Warning: Failed to delete port $port_name"
+		fi
+	done
+
+	echo -e "\nCurrent port status:"
+	devlink port show
+
+	return 0
+}
+
 function ovs_br_create() {
-	local i name
+	local i port_name
 
 	# Create OVS bridge br0
 	echo "Creating OVS bridge br0..."
@@ -102,12 +130,12 @@ function ovs_br_create() {
 	# Add SF ports to the bridge
 	echo "Adding SF ports to bridge br0..."
 	for ((i=0; i<rep_intf_num; i++)); do
-		# Extract name from rep_intf struct
-		name=$(echo "${rep_intfs[$i]}" | awk -F'name=' '{print $2}' | awk '{print $1}')
-		echo "Adding port $name to br0..."
-		ovs-vsctl add-port br0 "$name"
+		# Extract port_name from rep_intf struct
+		port_name=$(echo "${rep_intfs[$i]}" | awk -F'port_name=' '{print $2}' | awk '{print $1}')
+		echo "Adding port $port_name to br0..."
+		ovs-vsctl add-port br0 "$port_name"
 		if [ $? -ne 0 ]; then
-			echo "Error: Failed to add port $name to bridge br0"
+			echo "Error: Failed to add port $port_name to bridge br0"
 			return 2
 		fi
 	done
@@ -119,7 +147,7 @@ function ovs_br_create() {
 }
 
 function ovs_br_delete() {
-	local i name
+	local i port_name
 
 	echo "Deleting ports from bridge br0..."
 
@@ -134,12 +162,12 @@ function ovs_br_delete() {
 
 	# Delete SF ports
 	for ((i=0; i<rep_intf_num; i++)); do
-		# Extract name from rep_intf struct
-		name=$(echo "${rep_intfs[$i]}" | awk -F'name=' '{print $2}' | awk '{print $1}')
-		echo "Deleting port $name from br0..."
-		ovs-vsctl del-port br0 "$name"
+		# Extract port_name from rep_intf struct
+		port_name=$(echo "${rep_intfs[$i]}" | awk -F'port_name=' '{print $2}' | awk '{print $1}')
+		echo "Deleting port $port_name from br0..."
+		ovs-vsctl del-port br0 "$port_name"
 		if [ $? -ne 0 ]; then
-			echo "Warning: Failed to delete port $name from bridge br0"
+			echo "Warning: Failed to delete port $port_name from bridge br0"
 		fi
 	done
 
@@ -183,6 +211,7 @@ function ovs_main() {
 function rep_intf_main() {
 	rep_intf_get
 	if [ $? -eq 0 ]; then
+		echo -e "\n=== Current interface status ==="
 		rep_intf_show
 		return 0
 	else
@@ -194,8 +223,18 @@ function rep_intf_main() {
 # Run main functions in sequence
 echo "=== Getting interface information ==="
 rep_intf_main
-echo -e "\n=== Testing OVS operations ==="
-ovs_main
+if [ $? -eq 0 ]; then
+	echo -e "\n=== Testing OVS operations ==="
+	ovs_main
+	if [ $? -eq 0 ]; then
+		echo -e "\n=== Deleting SF ports ==="
+		rep_intf_del
+		if [ $? -ne 0 ]; then
+			echo "Failed to delete SF ports"
+			exit 2
+		fi
+	fi
+fi
 
 
 
