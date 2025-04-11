@@ -3,6 +3,11 @@
 # Global variables
 rep_intfs=()
 rep_intf_num=0
+PCI_ECPF0="0000:03:00.0"
+CREATE_FLAG=false
+NUM_PORTS=""
+DELETE_FLAG=false
+RUN_FLAG=false
 
 function usage() {
 	exit 1
@@ -105,6 +110,40 @@ function rep_intf_del() {
 	return 0
 }
 
+function rep_intf_create() {
+	local script_dir=$(dirname "$0")
+	local script_path="$script_dir/ext_create_remove_mdev_new_method_devlink.sh"
+	local num_ports="$1"
+
+	if [ -z "$num_ports" ]; then
+		echo "Error: Number of ports not specified"
+		return 1
+	fi
+
+	echo "Creating SF ports..."
+	if [ ! -f "$script_path" ]; then
+		echo "Error: Script $script_path not found"
+		return 1
+	fi
+
+	# Make the script executable if it's not
+	chmod +x "$script_path"
+
+	# Execute the script to create SF ports
+	echo "Running: $script_path -p $PCI_ECPF0 -n $num_ports"
+	"$script_path" -p "$PCI_ECPF0" -n "$num_ports"
+	if [ $? -ne 0 ]; then
+		echo "Error: Failed to create SF ports"
+		return 2
+	fi
+
+	# Show current port status
+	echo -e "\nCurrent port status:"
+	devlink port show
+
+	return 0
+}
+
 function ovs_br_create() {
 	local i port_name
 
@@ -185,50 +224,99 @@ function ovs_br_delete() {
 	return 0
 }
 
-# Print usage information
 function print_usage() {
-    echo "Usage: $0 [OPTION]"
+    echo "Usage: $0 [OPTIONS]"
     echo "Options:"
-    echo "  --run, -r     Get interface information and create OVS bridge"
-    echo "  --delete, -d  Delete OVS bridge and ports"
-    echo "  --help, -h    Display this help message"
+    echo "  --create, -c        Create SF ports (must be used with --num/-n)"
+    echo "  --num, -n NUMBER    Specify number of SF ports to create (must be used with --create/-c)"
+    echo "  --delete, -d        Delete SF ports and OVS bridge (no arguments)"
+    echo "  --run, -r           Run the test (no arguments)"
+    echo "  --help, -h          Print this help message"
+    exit 1
 }
 
 # Parse command line arguments
-if [ $# -eq 0 ]; then
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --create|-c)
+            CREATE_FLAG=true
+            shift
+            ;;
+        --num|-n)
+            if [[ -z "$2" || ! "$2" =~ ^[0-9]+$ ]]; then
+                echo "Error: --num/-n requires a valid number"
+                print_usage
+            fi
+            NUM_PORTS="$2"
+            shift 2
+            ;;
+        --delete|-d)
+            if [[ -n "$2" && ! "$2" =~ ^- ]]; then
+                echo "Error: --delete/-d does not accept arguments"
+                print_usage
+            fi
+            DELETE_FLAG=true
+            shift
+            ;;
+        --run|-r)
+            if [[ -n "$2" && ! "$2" =~ ^- ]]; then
+                echo "Error: --run/-r does not accept arguments"
+                print_usage
+            fi
+            RUN_FLAG=true
+            shift
+            ;;
+        --help|-h)
+            print_usage
+            ;;
+        *)
+            echo "Error: Unknown option $1"
+            print_usage
+            ;;
+    esac
+done
+
+# Validate arguments
+if [[ -n "$NUM_PORTS" && ! $CREATE_FLAG ]]; then
+    echo "Error: --num/-n must be used with --create/-c"
     print_usage
-    exit 0
 fi
 
-case "$1" in
-    --run|-r)
-        echo "=== Getting interface information ==="
-        rep_intf_get
-        if [ $? -eq 0 ]; then
-            echo -e "\n=== Current interface status ==="
-            rep_intf_show
-            echo -e "\n=== Creating OVS bridge ==="
-            ovs_br_create
-        fi
-        ;;
-    --delete|-d)
-        echo "=== Deleting OVS bridge ==="
-        rep_intf_get  # Need to get interface info for proper deletion
-        if [ $? -eq 0 ]; then
-            ovs_br_delete
-            echo -e "\n=== Deleting SF ports ==="
-            rep_intf_del
-        fi
-        ;;
-    --help|-h)
+if $CREATE_FLAG; then
+    if [[ -z "$NUM_PORTS" ]]; then
+        echo "Error: --create/-c requires --num/-n option"
         print_usage
-        ;;
-    *)
-        echo "Error: Invalid option"
-        print_usage
+    fi
+fi
+
+# Main logic
+if $CREATE_FLAG; then
+    rep_intf_create "$NUM_PORTS"
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to create SF ports"
         exit 1
-        ;;
-esac
+    fi
+
+    rep_intf_get
+    if [ $? -eq 0 ]; then
+        ovs_br_create
+        if [ $? -ne 0 ]; then
+            echo "Error: Failed to create OVS bridge"
+            exit 1
+        fi
+    fi
+elif $DELETE_FLAG; then
+    rep_intf_get
+    ovs_br_delete
+    rep_intf_del
+elif $RUN_FLAG; then
+    rep_intf_get
+    if [ $? -eq 0 ]; then
+        run_test
+    fi
+else
+    print_usage
+fi
 
 
 
