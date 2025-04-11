@@ -185,56 +185,45 @@ function ovs_br_delete() {
 	return 0
 }
 
-function ovs_main() {
-	# Create OVS bridge and add ports
-	echo -e "\nCreating OVS bridge and adding ports..."
-	ovs_br_create
-	if [ $? -ne 0 ]; then
-		echo "Failed to configure OVS bridge"
-		return 1
-	fi
-
-	# Wait a bit before deleting
-	sleep 2
-
-	# Delete OVS bridge and ports
-	echo -e "\nDeleting OVS bridge and ports..."
-	ovs_br_delete
-	if [ $? -ne 0 ]; then
-		echo "Failed to delete OVS bridge"
-		return 1
-	fi
-
-	return 0
+# Print usage information
+function print_usage() {
+    echo "Usage: $0 [OPTION]"
+    echo "Options:"
+    echo "  --run, -r     Get interface information and create OVS bridge"
+    echo "  --delete, -d  Delete OVS bridge and ports"
+    echo "  --help, -h    Display this help message"
 }
 
-function rep_intf_main() {
-	rep_intf_get
-	if [ $? -eq 0 ]; then
-		echo -e "\n=== Current interface status ==="
-		rep_intf_show
-		return 0
-	else
-		echo "Failed to get interfaces"
-		return 1
-	fi
-}
-
-# Run main functions in sequence
-echo "=== Getting interface information ==="
-rep_intf_main
-if [ $? -eq 0 ]; then
-	echo -e "\n=== Testing OVS operations ==="
-	ovs_main
-	if [ $? -eq 0 ]; then
-		echo -e "\n=== Deleting SF ports ==="
-		rep_intf_del
-		if [ $? -ne 0 ]; then
-			echo "Failed to delete SF ports"
-			exit 2
-		fi
-	fi
-fi
+# Parse command line arguments
+case "$1" in
+    --run|-r)
+        echo "=== Getting interface information ==="
+        rep_intf_get
+        if [ $? -eq 0 ]; then
+            echo -e "\n=== Current interface status ==="
+            rep_intf_show
+            echo -e "\n=== Creating OVS bridge ==="
+            ovs_br_create
+        fi
+        ;;
+    --delete|-d)
+        echo "=== Deleting OVS bridge ==="
+        rep_intf_get  # Need to get interface info for proper deletion
+        if [ $? -eq 0 ]; then
+            ovs_br_delete
+            echo -e "\n=== Deleting SF ports ==="
+            rep_intf_del
+        fi
+        ;;
+    --help|-h)
+        print_usage
+        ;;
+    *)
+        echo "Error: Invalid option"
+        print_usage
+        exit 1
+        ;;
+esac
 
 
 
