@@ -15,10 +15,14 @@ sf_intfs=()
 function create_sf_intf() {
     local sf_name=$1
     local sf_state=$2
-    # Create a new struct with sf_name and sf_state
+    local sf_addr=$3
+    local sf_mask=$4
+    # Create a new struct with sf_name, sf_state, addr and mask
     local -A sf_intf=(
         ["sf_name"]="$sf_name"
         ["sf_state"]="$sf_state"
+        ["sf_addr"]="$sf_addr"
+        ["sf_mask"]="$sf_mask"
     )
     echo "${sf_intf[@]}"
 }
@@ -29,28 +33,29 @@ function sf_intf_show() {
     echo "----------------------------"
     local idx=0
     for sf in "${sf_intfs[@]}"; do
-        # Split the struct into name and state
-        IFS=' ' read -r name state <<< "$sf"
+        # Split the struct into name, state, addr and mask
+        IFS=' ' read -r name state addr mask <<< "$sf"
         echo "SF Interface [$idx]:"
         echo "  Name: $name"
         echo "  State: $state"
+        echo "  IP: $addr/$mask"
         ((idx++))
     done
     echo "==========================="
 }
 
 function usage(){
-    echo "Usage: $0 [-s] | <ip2> [NIC#1 NIC#2 ...]"
+    echo "Usage: $0 [-s|-r]"
     echo "Options:"
     echo "  -s, --show    Show SF interfaces information"
+    echo "  -r, --run     Run bring_up_main and show interfaces information"
     echo ""
-    echo "Or assign IPs to NICs:"
-    echo "e.g.: if you run $0 100 eth1 eth2 eth3 inside VM clx-mus-15-005"
-    echo "it will assign 11.100.15.5/16 to eth1"
-    echo "               12.100.15.5/16 to eth2"
-    echo "               13.100.15.5/16 to eth3"
-    echo "the NIC names are optional, if not specified, all NICs without IPs will be used."
-    echo "but the order is not guaranteed, so it's better to specify the NIC names."
+    echo "The script will automatically assign IPs to all SF interfaces:"
+    echo "  - ip1 is fixed to 11"
+    echo "  - ip2 starts from 0"
+    echo "  - ip3 starts from 0"
+    echo "  - ip4 is fixed to 1"
+    echo "  - netmask is /24 (to support 4k different networks with one IP per network)"
 }
 
 function nic_up(){
@@ -71,37 +76,61 @@ function sf_intf_get() {
         intf_name=$(echo "$line" | awk -F': ' '{print $2}')
         intf_state=$(echo "$line" | grep -o "state [A-Z]*" | awk '{print $2}')
         # Create a new sf_intf struct and add it to the array
-        sf_intfs+=("$(create_sf_intf "$intf_name" "$intf_state")")
+        sf_intfs+=("$(create_sf_intf "$intf_name" "$intf_state" "" "")")
     done < <(ip a | grep "enp81s0f0s*")
 }
 
+function get_interface_state() {
+    local intf_name=$1
+    ip link show $intf_name | grep -o "state [A-Z]*" | awk '{print $2}'
+}
+
 function bring_up_main() {
-    local ip2=$1
-    shift
-
-    # Get all NICs without IP addresses, excluding loopback
-    nics_without_ip=$(ip -o link show | awk -F': ' '$2 != "lo" {print $2}' | while read nic; do
-        if ! ip addr show dev "$nic" | grep -q "inet "; then
-            echo "$nic"
-        fi
-    done)
-
-    # If no NICs specified as arguments, use the ones without IP
-    if [ $# -eq 0 ]; then
-        # Replace the positional parameters ($1, $2, etc) with the list of NICs that don't have IP addresses
-        # This allows the script to process all NICs without IPs if no specific NICs were provided as arguments
-        set -- $nics_without_ip
+    # Check if we have any SF interfaces
+    if [ ${#sf_intfs[@]} -eq 0 ]; then
+        echo "No SF interfaces found. Please run with -s option first."
+        exit 1
     fi
 
-    ip1=11
-    ip3=$(expr $(hostname -s|awk -F'-' "{print \$3}"|tr -dc '0-9') + 0)
-    ip4=$(expr $(hostname -s|awk -F'-' "{print \$4}"|tr -dc '0-9') + 0)
+    # Fixed values
+    local ip1=11
+    local ip4=1
+    local ip2=0
+    local ip3=0
+    local netmask=24
 
-    for nic in $@
-    do
-        echo "bring up NIC $nic"
-        nic_up $nic $ip1 $ip2 $ip3 $ip4 16
-        ((ip1++))
+    # Assign IPs to all SF interfaces
+    local idx=0
+    for sf in "${sf_intfs[@]}"; do
+        # Split the struct to get interface name
+        IFS=' ' read -r name state _ _ <<< "$sf"
+
+        # Calculate ip2 and ip3 based on index
+        # ip2 can be 0-15 (16 values)
+        # ip3 can be 0-250 (251 values)
+        # Total combinations: 16 * 251 = 4016 different networks
+        local new_ip2=$((ip2 + (idx / 251)))
+        local new_ip3=$((ip3 + (idx % 251)))
+
+        # Ensure ip3 doesn't exceed 250
+        if [ $new_ip3 -gt 250 ]; then
+            echo "Error: IP address calculation would exceed maximum ip3 value of 250"
+            exit 1
+        fi
+
+        # Create IP address string
+        local new_addr=$(printf '%d.%d.%d.%d' $ip1 $new_ip2 $new_ip3 $ip4)
+
+        echo "Bringing up SF interface $name"
+        echo "  IP: $new_addr/$netmask"
+        nic_up "$name" "$ip1" "$new_ip2" "$new_ip3" "$ip4" "$netmask"
+
+        # Get the latest interface state
+        local new_state=$(get_interface_state "$name")
+
+        # Update the sf_intf struct with the new IP, mask and state
+        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "$new_addr" "$netmask")"
+        ((idx++))
     done
 }
 
@@ -110,12 +139,16 @@ if [ "$1" = "-s" ] || [ "$1" = "--show" ]; then
     sf_intf_get
     sf_intf_show
     exit 0
-fi
-
-if [ $# -lt 1 ]; then
+elif [ "$1" = "-r" ] || [ "$1" = "--run" ]; then
+    sf_intf_get
+    bring_up_main
+    sf_intf_show
+    exit 0
+elif [ $# -gt 0 ]; then
+    usage
+    exit 1
+else
     usage
     exit 1
 fi
-
-bring_up_main "$@"
 
