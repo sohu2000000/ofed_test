@@ -45,10 +45,11 @@ function sf_intf_show() {
 }
 
 function usage(){
-    echo "Usage: $0 [-s|-r]"
+    echo "Usage: $0 [-s|-u|-d]"
     echo "Options:"
     echo "  -s, --show    Show SF interfaces information"
-    echo "  -r, --run     Run bring_up_main and show interfaces information"
+    echo "  -u, --up      Bring up interfaces with IP addresses"
+    echo "  -d, --down    Clear IP addresses and set interfaces to down state"
     echo ""
     echo "The script will automatically assign IPs to all SF interfaces:"
     echo "  - ip1 is fixed to 11"
@@ -66,6 +67,12 @@ function nic_up(){
     ip link set dev $dut_nic up
 }
 
+function nic_down(){
+    local dut_nic=$1
+    ip addr flush dev $dut_nic
+    ip link set dev $dut_nic down
+}
+
 function sf_intf_get() {
     # Clear the array first
     sf_intfs=()
@@ -74,9 +81,23 @@ function sf_intf_get() {
     while IFS= read -r line; do
         # Extract interface name and state from the line
         intf_name=$(echo "$line" | awk -F': ' '{print $2}')
+        # Skip if interface name is empty
+        if [ -z "$intf_name" ]; then
+            continue
+        fi
         intf_state=$(echo "$line" | grep -o "state [A-Z]*" | awk '{print $2}')
+
+        # Get IP address and mask if they exist
+        intf_addr=""
+        intf_mask=""
+        ip_info=$(ip addr show $intf_name | grep "inet " | awk '{print $2}')
+        if [ ! -z "$ip_info" ]; then
+            intf_addr=$(echo $ip_info | cut -d'/' -f1)
+            intf_mask=$(echo $ip_info | cut -d'/' -f2)
+        fi
+
         # Create a new sf_intf struct and add it to the array
-        sf_intfs+=("$(create_sf_intf "$intf_name" "$intf_state" "" "")")
+        sf_intfs+=("$(create_sf_intf "$intf_name" "$intf_state" "$intf_addr" "$intf_mask")")
     done < <(ip a | grep "enp81s0f0s*")
 }
 
@@ -85,7 +106,7 @@ function get_interface_state() {
     ip link show $intf_name | grep -o "state [A-Z]*" | awk '{print $2}'
 }
 
-function bring_up_main() {
+function sf_intf_bringup() {
     # Check if we have any SF interfaces
     if [ ${#sf_intfs[@]} -eq 0 ]; then
         echo "No SF interfaces found. Please run with -s option first."
@@ -134,14 +155,44 @@ function bring_up_main() {
     done
 }
 
+function sf_intf_bringdown() {
+    # Check if we have any SF interfaces
+    if [ ${#sf_intfs[@]} -eq 0 ]; then
+        echo "No SF interfaces found. Please run with -s option first."
+        exit 1
+    fi
+
+    # Bring down all SF interfaces
+    local idx=0
+    for sf in "${sf_intfs[@]}"; do
+        # Split the struct to get interface name
+        IFS=' ' read -r name state _ _ <<< "$sf"
+
+        echo "Bringing down SF interface $name"
+        nic_down "$name"
+
+        # Get the latest interface state
+        local new_state=$(get_interface_state "$name")
+
+        # Update the sf_intf struct with empty IP and mask, and new state
+        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "" "")"
+        ((idx++))
+    done
+}
+
 # Parse command line arguments
 if [ "$1" = "-s" ] || [ "$1" = "--show" ]; then
     sf_intf_get
     sf_intf_show
     exit 0
-elif [ "$1" = "-r" ] || [ "$1" = "--run" ]; then
+elif [ "$1" = "-u" ] || [ "$1" = "--up" ]; then
     sf_intf_get
-    bring_up_main
+    sf_intf_bringup
+    sf_intf_show
+    exit 0
+elif [ "$1" = "-d" ] || [ "$1" = "--down" ]; then
+    sf_intf_get
+    sf_intf_bringdown
     sf_intf_show
     exit 0
 elif [ $# -gt 0 ]; then
