@@ -44,19 +44,15 @@ function sf_intf_show() {
     echo "==========================="
 }
 
-function usage(){
-    echo "Usage: $0 [-s|-u|-d]"
+# Function to display usage
+usage() {
+    echo "Usage: $0 [OPTIONS]"
     echo "Options:"
-    echo "  -s, --show    Show SF interfaces information"
-    echo "  -u, --up      Bring up interfaces with IP addresses"
-    echo "  -d, --down    Clear IP addresses and set interfaces to down state"
-    echo ""
-    echo "The script will automatically assign IPs to all SF interfaces:"
-    echo "  - ip1 is fixed to 11"
-    echo "  - ip2 starts from 0"
-    echo "  - ip3 starts from 0"
-    echo "  - ip4 is fixed to 1"
-    echo "  - netmask is /24 (to support 4k different networks with one IP per network)"
+    echo "  -u [src|dst]    Bring up SF interfaces (src: ip4=1, dst: ip4=2)"
+    echo "  -d              Bring down SF interfaces"
+    echo "  -s              Show SF interfaces information"
+    echo "  -h              Show this help message"
+    exit 1
 }
 
 function nic_up(){
@@ -115,7 +111,6 @@ function sf_intf_bringup() {
 
     # Fixed values
     local ip1=11
-    local ip4=1
     local ip2=0
     local ip3=0
     local netmask=24
@@ -181,25 +176,42 @@ function sf_intf_bringdown() {
 }
 
 # Parse command line arguments
-if [ "$1" = "-s" ] || [ "$1" = "--show" ]; then
-    sf_intf_get
-    sf_intf_show
-    exit 0
-elif [ "$1" = "-u" ] || [ "$1" = "--up" ]; then
-    sf_intf_get
-    sf_intf_bringup
-    sf_intf_show
-    exit 0
-elif [ "$1" = "-d" ] || [ "$1" = "--down" ]; then
-    sf_intf_get
-    sf_intf_bringdown
-    sf_intf_show
-    exit 0
-elif [ $# -gt 0 ]; then
+while getopts "u:ds" opt; do
+    case $opt in
+        u)
+            if [[ "$OPTARG" != "src" && "$OPTARG" != "dst" ]]; then
+                echo "Error: -u option requires 'src' or 'dst' parameter"
+                usage
+            fi
+            if [[ "$OPTARG" == "src" ]]; then
+                ip4=1
+            else
+                ip4=2
+            fi
+            sf_intf_get
+            sf_intf_bringup
+            sf_intf_show
+            exit 0
+        ;;
+        d)
+            sf_intf_get
+            sf_intf_bringdown
+            sf_intf_show
+            exit 0
+        ;;
+        s)
+            sf_intf_get
+            sf_intf_show
+            exit 0
+        ;;
+        *)
+            usage
+            ;;
+    esac
+done
+
+# If no arguments provided, show usage
+if [ $OPTIND -eq 1 ]; then
     usage
-    exit 1
-else
-    usage
-    exit 1
 fi
 
