@@ -8,8 +8,43 @@
 #  and activate it for traffic running.
 #====================================================#
 
+# Global array to store SF interface structs
+sf_intfs=()
+
+# Function to create a new sf_intf struct
+function create_sf_intf() {
+    local sf_name=$1
+    local sf_state=$2
+    # Create a new struct with sf_name and sf_state
+    local -A sf_intf=(
+        ["sf_name"]="$sf_name"
+        ["sf_state"]="$sf_state"
+    )
+    echo "${sf_intf[@]}"
+}
+
+function sf_intf_show() {
+    echo "=== SF Interfaces Information ==="
+    echo "Total SF interfaces found: ${#sf_intfs[@]}"
+    echo "----------------------------"
+    local idx=0
+    for sf in "${sf_intfs[@]}"; do
+        # Split the struct into name and state
+        IFS=' ' read -r name state <<< "$sf"
+        echo "SF Interface [$idx]:"
+        echo "  Name: $name"
+        echo "  State: $state"
+        ((idx++))
+    done
+    echo "==========================="
+}
+
 function usage(){
-    echo "Usage: $0 <ip2> [NIC#1 NIC#2 ...]"
+    echo "Usage: $0 [-s] | <ip2> [NIC#1 NIC#2 ...]"
+    echo "Options:"
+    echo "  -s, --show    Show SF interfaces information"
+    echo ""
+    echo "Or assign IPs to NICs:"
     echo "e.g.: if you run $0 100 eth1 eth2 eth3 inside VM clx-mus-15-005"
     echo "it will assign 11.100.15.5/16 to eth1"
     echo "               12.100.15.5/16 to eth2"
@@ -26,13 +61,24 @@ function nic_up(){
     ip link set dev $dut_nic up
 }
 
-if [ $# -lt 1 ]
-then
-    usage
-    exit 1
-else
-    ip2=$1
+function sf_intf_get() {
+    # Clear the array first
+    sf_intfs=()
+
+    # Get all SF interfaces and store them in the array
+    while IFS= read -r line; do
+        # Extract interface name and state from the line
+        intf_name=$(echo "$line" | awk -F': ' '{print $2}')
+        intf_state=$(echo "$line" | grep -o "state [A-Z]*" | awk '{print $2}')
+        # Create a new sf_intf struct and add it to the array
+        sf_intfs+=("$(create_sf_intf "$intf_name" "$intf_state")")
+    done < <(ip a | grep "enp81s0f0s*")
+}
+
+function bring_up_main() {
+    local ip2=$1
     shift
+
     # Get all NICs without IP addresses, excluding loopback
     nics_without_ip=$(ip -o link show | awk -F': ' '$2 != "lo" {print $2}' | while read nic; do
         if ! ip addr show dev "$nic" | grep -q "inet "; then
@@ -57,4 +103,19 @@ else
         nic_up $nic $ip1 $ip2 $ip3 $ip4 16
         ((ip1++))
     done
+}
+
+# Parse command line arguments
+if [ "$1" = "-s" ] || [ "$1" = "--show" ]; then
+    sf_intf_get
+    sf_intf_show
+    exit 0
 fi
+
+if [ $# -lt 1 ]; then
+    usage
+    exit 1
+fi
+
+bring_up_main "$@"
+
