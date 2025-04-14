@@ -29,7 +29,8 @@ function create_sf_intf() {
 
 function sf_intf_show() {
     echo "=== SF Interfaces Information ==="
-    echo "Total SF interfaces found: ${#sf_intfs[@]}"
+    local total_count=${#sf_intfs[@]}
+    echo "Total SF interfaces found: $total_count"
     echo "----------------------------"
     local idx=0
     for sf in "${sf_intfs[@]}"; do
@@ -42,6 +43,7 @@ function sf_intf_show() {
         ((idx++))
     done
     echo "==========================="
+    echo "Total SF interfaces: $total_count"
 }
 
 # Function to display usage
@@ -184,8 +186,23 @@ function sf_intf_bringdown() {
 }
 
 function sf_intf_conn_check() {
-    local role=$1  # src or dst
+    local role=$1
+    if [ -z "$role" ]; then
+        echo "Error: Role parameter is required (src or dst)"
+        return 1
+    fi
+    if [[ "$role" != "src" && "$role" != "dst" ]]; then
+        echo "Error: Invalid role '$role', should be 'src' or 'dst'"
+        return 1
+    fi
+
     echo "=== Checking SF Interfaces Connectivity ==="
+    local total_count=${#sf_intfs[@]}
+    local success_count=0
+    local failed_intfs=()
+    echo "Total SF interfaces to check: $total_count"
+    echo "----------------------------"
+
     local idx=0
     for sf in "${sf_intfs[@]}"; do
         # Split the struct to get interface info
@@ -194,6 +211,7 @@ function sf_intf_conn_check() {
         # Skip if interface has no IP address
         if [ -z "$addr" ]; then
             echo "SF Interface [$idx] $name: No IP address configured"
+            failed_intfs+=("$name (No IP)")
             ((idx++))
             continue
         fi
@@ -204,11 +222,8 @@ function sf_intf_conn_check() {
         # Calculate peer IP based on role
         if [ "$role" = "src" ]; then
             peer_ip4="2"
-        elif [ "$role" = "dst" ]; then
-            peer_ip4="1"
         else
-            echo "Error: Invalid role '$role', should be 'src' or 'dst'"
-            return 1
+            peer_ip4="1"
         fi
 
         # Construct peer IP address
@@ -222,13 +237,22 @@ function sf_intf_conn_check() {
         # Ping the peer IP
         if ping -c 2 -W 1 $peer_addr > /dev/null 2>&1; then
             echo "  Status: Connected ✓"
+            ((success_count++))
         else
             echo "  Status: Not Connected ✗"
+            failed_intfs+=("$name")
         fi
 
         ((idx++))
     done
     echo "========================================"
+    echo "Connectivity Test Summary:"
+    echo "  Total interfaces: $total_count"
+    echo "  Successfully connected: $success_count"
+    if [ ${#failed_intfs[@]} -gt 0 ]; then
+        echo "  Failed interfaces: ${failed_intfs[*]}"
+        return 1
+    fi
 }
 
 # Parse command line arguments
@@ -284,9 +308,9 @@ while true; do
                 echo "Error: -t/--test option requires 'src' or 'dst' parameter"
                 usage
             fi
-            shift 2
             sf_intf_get
             sf_intf_conn_check "$2"
+            shift 2
             exit 0
             ;;
         '-h'|'--help')
