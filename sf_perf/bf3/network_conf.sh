@@ -7,7 +7,7 @@ PCI_ECPF0="0000:03:00.0"
 CREATE_FLAG=false
 NUM_PORTS=""
 DELETE_FLAG=false
-RUN_FLAG=false
+SHOW_FLAG=false
 
 function usage() {
 	exit 1
@@ -230,7 +230,7 @@ function print_usage() {
     echo "  --create, -c        Create SF ports (must be used with --num/-n)"
     echo "  --num, -n NUMBER    Specify number of SF ports to create (must be used with --create/-c)"
     echo "  --delete, -d        Delete SF ports and OVS bridge (no arguments)"
-    echo "  --run, -r           Run the test (no arguments)"
+    echo "  --show, -s          Show SF ports information (no arguments)"
     echo "  --help, -h          Print this help message"
     exit 1
 }
@@ -258,12 +258,12 @@ while [[ $# -gt 0 ]]; do
             DELETE_FLAG=true
             shift
             ;;
-        --run|-r)
+        --show|-s)
             if [[ -n "$2" && ! "$2" =~ ^- ]]; then
-                echo "Error: --run/-r does not accept arguments"
+                echo "Error: --show/-s does not accept arguments"
                 print_usage
             fi
-            RUN_FLAG=true
+            SHOW_FLAG=true
             shift
             ;;
         --help|-h)
@@ -309,10 +309,10 @@ elif $DELETE_FLAG; then
     rep_intf_get
     ovs_br_delete
     rep_intf_del
-elif $RUN_FLAG; then
+elif $SHOW_FLAG; then
     rep_intf_get
     if [ $? -eq 0 ]; then
-        run_test
+        rep_intf_show
     fi
 else
     print_usage
