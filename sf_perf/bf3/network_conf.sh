@@ -157,7 +157,7 @@ function ovs_br_create() {
 
 	# Add additional ports
 	echo "Adding additional ports to br0..."
-	for port in "p0" "pf0hpf"; do
+	for port in "p0" "pf0hpf" "p1" "pf1hpf"; do
 		echo "Adding port $port to br0..."
 		ovs-vsctl add-port br0 "$port"
 		if [ $? -ne 0 ]; then
