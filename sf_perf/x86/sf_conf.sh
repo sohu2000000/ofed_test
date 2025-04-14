@@ -94,7 +94,7 @@ function sf_intf_get() {
 
         # Create a new sf_intf struct and add it to the array
         sf_intfs+=("$(create_sf_intf "$intf_name" "$intf_state" "$intf_addr" "$intf_mask")")
-    done < <(ip a | grep "enp21s0f0s*")
+    done < <(ip a | grep "enp.*s0f0s")
 }
 
 function get_interface_state() {
