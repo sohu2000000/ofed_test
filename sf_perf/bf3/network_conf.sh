@@ -77,6 +77,7 @@ function rep_intf_get() {
 
 function rep_intf_show() {
 	local i
+	echo "Total number of SF interfaces: $rep_intf_num"
 	for ((i=0; i<rep_intf_num; i++)); do
 		echo "Interface struct $i: ${rep_intfs[$i]}"
 	done
@@ -227,8 +228,7 @@ function ovs_br_delete() {
 function print_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "Options:"
-    echo "  --create, -c        Create SF ports (must be used with --num/-n)"
-    echo "  --num, -n NUMBER    Specify number of SF ports to create (must be used with --create/-c)"
+    echo "  --add, -a NUMBER    Add SF ports with specified number"
     echo "  --delete, -d        Delete SF ports and OVS bridge (no arguments)"
     echo "  --show, -s          Show SF ports information (no arguments)"
     echo "  --help, -h          Print this help message"
@@ -238,15 +238,12 @@ function print_usage() {
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --create|-c)
-            CREATE_FLAG=true
-            shift
-            ;;
-        --num|-n)
+        --add|-a)
             if [[ -z "$2" || ! "$2" =~ ^[0-9]+$ ]]; then
-                echo "Error: --num/-n requires a valid number"
+                echo "Error: --add/-a requires a valid number"
                 print_usage
             fi
+            CREATE_FLAG=true
             NUM_PORTS="$2"
             shift 2
             ;;
@@ -277,14 +274,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate arguments
-if [[ -n "$NUM_PORTS" && ! $CREATE_FLAG ]]; then
-    echo "Error: --num/-n must be used with --create/-c"
-    print_usage
-fi
-
 if $CREATE_FLAG; then
     if [[ -z "$NUM_PORTS" ]]; then
-        echo "Error: --create/-c requires --num/-n option"
+        echo "Error: --add/-a requires a number argument"
         print_usage
     fi
 fi
