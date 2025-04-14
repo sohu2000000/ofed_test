@@ -73,28 +73,35 @@ function sf_intf_get() {
     # Clear the array first
     sf_intfs=()
 
-    # Get all SF interfaces and store them in the array
-    while IFS= read -r line; do
-        # Extract interface name and state from the line
-        intf_name=$(echo "$line" | awk -F': ' '{print $2}')
-        # Skip if interface name is empty
-        if [ -z "$intf_name" ]; then
+    # Get all interfaces
+    for intf in $(ip link show | grep -E "^[0-9]+:" | awk -F': ' '{print $2}'); do
+        # Skip loopback interface
+        if [ "$intf" = "lo" ]; then
             continue
         fi
-        intf_state=$(echo "$line" | grep -o "state [A-Z]*" | awk '{print $2}')
 
-        # Get IP address and mask if they exist
-        intf_addr=""
-        intf_mask=""
-        ip_info=$(ip addr show $intf_name | grep "inet " | awk '{print $2}')
-        if [ ! -z "$ip_info" ]; then
-            intf_addr=$(echo $ip_info | cut -d'/' -f1)
-            intf_mask=$(echo $ip_info | cut -d'/' -f2)
+        # Get driver and bus-info using ethtool
+        driver=$(ethtool -i $intf 2>/dev/null | grep "driver:" | awk '{print $2}')
+        bus_info=$(ethtool -i $intf 2>/dev/null | grep "bus-info:" | awk '{print $2}')
+
+        # Check if it's an mlx5_core SF interface
+        if [ "$driver" = "mlx5_core" ] && [[ "$bus_info" == mlx5_core.sf.* ]]; then
+            # Get interface state
+            intf_state=$(ip link show $intf | grep -o "state [A-Z]*" | awk '{print $2}')
+
+            # Get IP address and mask if they exist
+            intf_addr=""
+            intf_mask=""
+            ip_info=$(ip addr show $intf | grep "inet " | awk '{print $2}')
+            if [ ! -z "$ip_info" ]; then
+                intf_addr=$(echo $ip_info | cut -d'/' -f1)
+                intf_mask=$(echo $ip_info | cut -d'/' -f2)
+            fi
+
+            # Create a new sf_intf struct and add it to the array
+            sf_intfs+=("$(create_sf_intf "$intf" "$intf_state" "$intf_addr" "$intf_mask")")
         fi
-
-        # Create a new sf_intf struct and add it to the array
-        sf_intfs+=("$(create_sf_intf "$intf_name" "$intf_state" "$intf_addr" "$intf_mask")")
-    done < <(ip a | grep "enp.*s0f0s")
+    done
 }
 
 function get_interface_state() {
