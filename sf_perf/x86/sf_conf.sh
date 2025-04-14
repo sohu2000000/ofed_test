@@ -235,7 +235,7 @@ function sf_intf_conn_check() {
         echo "  Pinging peer..."
 
         # Ping the peer IP
-        if ping -c 2 -W 1 $peer_addr > /dev/null 2>&1; then
+        if ping -c 2 -W 10 $peer_addr > /dev/null 2>&1; then
             echo "  Status: Connected ✓"
             ((success_count++))
         else
