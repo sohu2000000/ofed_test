@@ -312,7 +312,10 @@ elif $DELETE_FLAG; then
 elif $SHOW_FLAG; then
     rep_intf_get
     if [ $? -eq 0 ]; then
+        echo -e "\nSF ports information:"
         rep_intf_show
+        echo -e "\nOVS bridge configuration:"
+        ovs-vsctl show
     fi
 else
     print_usage
