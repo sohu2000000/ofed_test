@@ -148,34 +148,53 @@ function rep_intf_create() {
 function ovs_br_create() {
 	local i port_name
 
-	# Create OVS bridge br0
-	echo "Creating OVS bridge br0..."
-	ovs-vsctl add-br br0
+	# Create OVS bridge br1
+	echo "Creating OVS bridge br1..."
+	ovs-vsctl add-br br1
 	if [ $? -ne 0 ]; then
-		echo "Error: Failed to create OVS bridge br0"
+		echo "Error: Failed to create OVS bridge br1"
 		return 1
 	fi
 
-	# Add additional ports
-	echo "Adding additional ports to br0..."
-	for port in "p0" "pf0hpf" "p1" "pf1hpf"; do
-		echo "Adding port $port to br0..."
-		ovs-vsctl add-port br0 "$port"
+	# Create OVS bridge br2
+	echo "Creating OVS bridge br2..."
+	ovs-vsctl add-br br2
+	if [ $? -ne 0 ]; then
+		echo "Error: Failed to create OVS bridge br2"
+		return 1
+	fi
+
+	# Add ports to br1
+	echo "Adding ports to br1..."
+	for port in "p0" "pf0hpf"; do
+		echo "Adding port $port to br1..."
+		ovs-vsctl add-port br1 "$port"
 		if [ $? -ne 0 ]; then
-			echo "Error: Failed to add port $port to bridge br0"
+			echo "Error: Failed to add port $port to bridge br1"
 			return 2
 		fi
 	done
 
-	# Add SF ports to the bridge
-	echo "Adding SF ports to bridge br0..."
+	# Add ports to br2
+	echo "Adding ports to br2..."
+	for port in "p1" "pf1hpf"; do
+		echo "Adding port $port to br2..."
+		ovs-vsctl add-port br2 "$port"
+		if [ $? -ne 0 ]; then
+			echo "Error: Failed to add port $port to bridge br2"
+			return 2
+		fi
+	done
+
+	# Add SF ports to br1
+	echo "Adding SF ports to bridge br1..."
 	for ((i=0; i<rep_intf_num; i++)); do
 		# Extract port_name from rep_intf struct
 		port_name=$(echo "${rep_intfs[$i]}" | awk -F'port_name=' '{print $2}' | awk '{print $1}')
-		echo "Adding port $port_name to br0..."
-		ovs-vsctl add-port br0 "$port_name"
+		echo "Adding port $port_name to br1..."
+		ovs-vsctl add-port br1 "$port_name"
 		if [ $? -ne 0 ]; then
-			echo "Error: Failed to add port $port_name to bridge br0"
+			echo "Error: Failed to add port $port_name to bridge br1"
 			return 2
 		fi
 	done
@@ -187,37 +206,56 @@ function ovs_br_create() {
 }
 
 function ovs_br_delete() {
-	local i port_name
+	local bridges
+	local ports
+	local bridge
+	local port
 
-	echo "Deleting ports from bridge br0..."
-
-	# Delete additional ports
-	for port in "p0" "pf0hpf"; do
-		echo "Deleting port $port from br0..."
-		ovs-vsctl del-port br0 "$port"
-		if [ $? -ne 0 ]; then
-			echo "Warning: Failed to delete port $port from bridge br0"
-		fi
-	done
-
-	# Delete SF ports
-	for ((i=0; i<rep_intf_num; i++)); do
-		# Extract port_name from rep_intf struct
-		port_name=$(echo "${rep_intfs[$i]}" | awk -F'port_name=' '{print $2}' | awk '{print $1}')
-		echo "Deleting port $port_name from br0..."
-		ovs-vsctl del-port br0 "$port_name"
-		if [ $? -ne 0 ]; then
-			echo "Warning: Failed to delete port $port_name from bridge br0"
-		fi
-	done
-
-	# Delete the bridge
-	echo "Deleting bridge br0..."
-	ovs-vsctl del-br br0
+	# Get all existing OVS bridges
+	bridges=$(ovs-vsctl list-br)
 	if [ $? -ne 0 ]; then
-		echo "Error: Failed to delete bridge br0"
+		echo "Error: Failed to list OVS bridges"
 		return 1
 	fi
+
+	# If no bridges exist, return
+	if [ -z "$bridges" ]; then
+		echo "No OVS bridges found"
+		return 0
+	fi
+
+	echo "Found OVS bridges: $bridges"
+
+	# For each bridge, delete all its ports
+	for bridge in $bridges; do
+		echo "Processing bridge: $bridge"
+
+		# Get all ports in the current bridge
+		ports=$(ovs-vsctl list-ports $bridge)
+		if [ $? -ne 0 ]; then
+			echo "Warning: Failed to list ports for bridge $bridge"
+			continue
+		fi
+
+		# Delete each port from the bridge
+		for port in $ports; do
+			echo "Deleting port $port from bridge $bridge..."
+			ovs-vsctl del-port $bridge "$port"
+			if [ $? -ne 0 ]; then
+				echo "Warning: Failed to delete port $port from bridge $bridge"
+			fi
+		done
+	done
+
+	# Delete all bridges
+	for bridge in $bridges; do
+		echo "Deleting bridge $bridge..."
+		ovs-vsctl del-br $bridge
+		if [ $? -ne 0 ]; then
+			echo "Error: Failed to delete bridge $bridge"
+			return 1
+		fi
+	done
 
 	# Show final configuration
 	echo -e "\nFinal OVS configuration:"
