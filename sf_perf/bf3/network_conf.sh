@@ -59,6 +59,17 @@ function rep_intf_get() {
 					break
 				fi
 			done <<< "$devlink_out"
+
+			# If the port name is eth0, try to find the correct SF port name
+			if [[ $current_name == "eth0" ]]; then
+				while IFS= read -r devlink_line; do
+					if [[ $devlink_line =~ sfnum\ $current_sfnum && $devlink_line =~ netdev\ (en3f0c1pf0sf[0-9]+) ]]; then
+						current_name="${BASH_REMATCH[1]}"
+						break
+					fi
+				done <<< "$devlink_out"
+			fi
+
 			rep_intfs[$idx]=$(rep_intf_init "$current_name" "$current_index" "$current_hw_addr" "$current_sfnum")
 			((idx++))
 		fi
