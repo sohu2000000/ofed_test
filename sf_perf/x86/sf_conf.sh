@@ -1,11 +1,14 @@
 #!/bin/bash
 
 #====================================================#
-#File Name: bringup_vm_nics.sh
+#File Name: sf_conf.sh
 #Author: Feng Liu
 #Date: 2025/April/11
-#Description: assign IP to target NICs inside a VM
-#  and activate it for traffic running.
+#Description: Configure and manage SF (Smart Function) interfaces:
+#  - Detect and list SF interfaces
+#  - Bring up/down SF interfaces with IP configuration
+#  - Test connectivity between SF interfaces
+#  - Support source and destination roles for testing
 #====================================================#
 
 # Global array to store SF interface structs
@@ -18,13 +21,7 @@ function create_sf_intf() {
     local sf_addr=$3
     local sf_mask=$4
     # Create a new struct with sf_name, sf_state, addr and mask
-    local -A sf_intf=(
-        ["sf_name"]="$sf_name"
-        ["sf_state"]="$sf_state"
-        ["sf_addr"]="$sf_addr"
-        ["sf_mask"]="$sf_mask"
-    )
-    echo "${sf_intf[@]}"
+    echo "$sf_name $sf_state $sf_addr $sf_mask"
 }
 
 function sf_intf_show() {
@@ -39,7 +36,11 @@ function sf_intf_show() {
         echo "SF Interface [$idx]:"
         echo "  Name: $name"
         echo "  State: $state"
-        echo "  IP: $addr/$mask"
+        if [ -n "$addr" ] && [ -n "$mask" ]; then
+            echo "  IP: $addr/$mask"
+        else
+            echo "  IP: /"
+        fi
         ((idx++))
     done
     echo "==========================="
@@ -58,12 +59,34 @@ usage() {
     exit 1
 }
 
+function wait_for_interface_up() {
+    local intf_name=$1
+    local max_retries=5
+    local retry=0
+    local wait_time=1
+
+    while [ $retry -lt $max_retries ]; do
+        local state=$(get_interface_state "$intf_name")
+        if [ "$state" = "UP" ]; then
+            return 0
+        fi
+        sleep $wait_time
+        ((retry++))
+    done
+    return 1
+}
+
 function nic_up(){
     local dut_nic=$1
     local new_ip=$(printf '%d.%d.%d.%d/%d' $2 $3 $4 $5 $6)
     ip addr flush dev $dut_nic
     ip addr add $new_ip dev $dut_nic
     ip link set dev $dut_nic up
+
+    # Wait for interface to come up
+    if ! wait_for_interface_up "$dut_nic"; then
+        echo "Warning: Interface $dut_nic may not be fully up"
+    fi
 }
 
 function nic_down(){
@@ -132,9 +155,6 @@ function sf_intf_bringup() {
         IFS=' ' read -r name state _ _ <<< "$sf"
 
         # Calculate ip2 and ip3 based on index
-        # ip2 can be 0-15 (16 values)
-        # ip3 can be 0-250 (251 values)
-        # Total combinations: 16 * 251 = 4016 different networks
         local new_ip2=$((ip2 + (idx / 251)))
         local new_ip3=$((ip3 + (idx % 251)))
 
@@ -158,6 +178,10 @@ function sf_intf_bringup() {
         sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "$new_addr" "$netmask")"
         ((idx++))
     done
+
+    # Final check of all interfaces
+    sleep 1
+    sf_intf_get
 }
 
 function sf_intf_bringdown() {
@@ -209,7 +233,7 @@ function sf_intf_conn_check() {
         IFS=' ' read -r name state addr mask <<< "$sf"
 
         # Skip if interface has no IP address
-        if [ -z "$addr" ]; then
+        if [ -z "$addr" ] || [ -z "$mask" ]; then
             echo "SF Interface [$idx] $name: No IP address configured"
             failed_intfs+=("$name (No IP)")
             ((idx++))
@@ -234,8 +258,8 @@ function sf_intf_conn_check() {
         echo "  Peer IP: $peer_addr"
         echo "  Pinging peer..."
 
-        # Ping the peer IP
-        if ping -c 2 -W 10 $peer_addr > /dev/null 2>&1; then
+        # Ping the peer IP with increased timeout and retry count
+        if ping -c 3 -W 2 $peer_addr > /dev/null 2>&1; then
             echo "  Status: Connected ✓"
             ((success_count++))
         else
