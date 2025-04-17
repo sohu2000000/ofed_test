@@ -258,12 +258,29 @@ function sf_intf_conn_check() {
         echo "  Peer IP: $peer_addr"
         echo "  Pinging peer..."
 
-        # Ping the peer IP with increased timeout and retry count
-        if ping -c 3 -W 2 $peer_addr > /dev/null 2>&1; then
-            echo "  Status: Connected ✓"
-            ((success_count++))
-        else
-            echo "  Status: Not Connected ✗"
+        # Try ping with retries
+        local max_retries=10
+        local retry=0
+        local ping_success=0
+
+        while [ $retry -lt $max_retries ]; do
+            if [ $retry -gt 0 ]; then
+                echo "  Retry attempt $retry/$max_retries..."
+            fi
+
+            if ping -c 3 -W 100 $peer_addr > /dev/null 2>&1; then
+                echo "  Status: Connected ✓"
+                ping_success=1
+                ((success_count++))
+                break
+            else
+                echo "  Status: Not Connected ✗ (Attempt $((retry + 1))/$max_retries)"
+                sleep 1  # Wait 1 second before retrying
+            fi
+            ((retry++))
+        done
+
+        if [ $ping_success -eq 0 ]; then
             failed_intfs+=("$name")
         fi
 
