@@ -204,25 +204,11 @@ function sf_intf_bringup() {
     local ip1=11
     local netmask=24
 
-    # Validate role and set expected ip4
-    local expected_ip4
-    local peer_ip4
-    if [ "$role" = "src" ]; then
-        expected_ip4=1
-        peer_ip4=2
-    elif [ "$role" = "dst" ]; then
-        expected_ip4=2
-        peer_ip4=1
-    else
-        echo "Error: Invalid role '$role'. Must be either 'src' or 'dst'"
-        exit 1
-    fi
-
-    # Assign IPs to all SF interfaces
+    # Bring up all SF interfaces
     local idx=0
     for sf in "${sf_intfs[@]}"; do
-        # Split the struct to get interface name and mac
-        IFS='|' read -r name state _ _ mac _ host_type _ _ <<< "$sf"
+        # Split the struct to get interface name and IP info
+        IFS='|' read -r name state addr mask mac sf_num host_type peer_ip peer_mac <<< "$sf"
 
         # Split MAC address into parts
         IFS=':' read -r mac1 mac2 mac3 mac4 mac5 mac6 <<< "$mac"
@@ -232,37 +218,29 @@ function sf_intf_bringup() {
         ip3=$((16#$mac5))
         ip4=$((16#$mac6))
 
-        # Validate ip4 matches the expected value
-        if [ $ip4 -ne $expected_ip4 ]; then
-            echo "Error: MAC address $mac has ip4=$ip4, but expected ip4=$expected_ip4 for role '$role'"
-            exit 1
-        fi
-
-        # Create IP address string and peer IP address string
+        # Create IP address string
         local new_addr=$(printf '%d.%d.%d.%d' $ip1 $ip2 $ip3 $ip4)
-        local new_peer_ip=$(printf '%d.%d.%d.%d' $ip1 $ip2 $ip3 $peer_ip4)
-
-        # Create peer MAC address string
-        local new_peer_mac=$(printf '%s:%s:%s:%s:%s:%02x' $mac1 $mac2 $mac3 $mac4 $mac5 $peer_ip4)
 
         echo "Bringing up SF interface $name"
         echo "  MAC: $mac"
         echo "  IP: $new_addr/$netmask"
-        echo "  PEER_IP: $new_peer_ip/$netmask"
-        echo "  PEER_MAC: $new_peer_mac"
+        echo "  PEER_IP: $peer_ip/$netmask"
+        echo "  PEER_MAC: $peer_mac"
         nic_up "$name" "$ip1" "$ip2" "$ip3" "$ip4" "$netmask"
+
+        # Add static ARP entry for peer
+        if [ -n "$peer_ip" ] && [ -n "$peer_mac" ]; then
+            echo "Adding static ARP entry for peer $peer_ip -> $peer_mac on $name"
+            arp -s "$peer_ip" "$peer_mac" -i "$name"
+        fi
 
         # Get the latest interface state
         local new_state=$(get_interface_state "$name")
 
-        # Update the sf_intf struct with all fields including peer_ip and peer_mac
-        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "$new_addr" "$netmask" "$mac" "$intf_sf_num" "$host_type" "$new_peer_ip" "$new_peer_mac")"
+        # Update the sf_intf struct with new state
+        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "$new_addr" "$netmask" "$mac" "$sf_num" "$host_type" "$peer_ip" "$peer_mac")"
         ((idx++))
     done
-
-    # Final check of all interfaces
-    sleep 1
-    sf_intf_get
 }
 
 function sf_intf_bringdown() {
