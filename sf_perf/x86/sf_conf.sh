@@ -157,32 +157,46 @@ function sf_intf_bringup() {
 
     # Fixed values
     local ip1=11
-    local ip2=0
-    local ip3=0
     local netmask=24
+
+    # Validate role and set expected ip4
+    local expected_ip4
+    if [ "$role" = "src" ]; then
+        expected_ip4=1
+    elif [ "$role" = "dst" ]; then
+        expected_ip4=2
+    else
+        echo "Error: Invalid role '$role'. Must be either 'src' or 'dst'"
+        exit 1
+    fi
 
     # Assign IPs to all SF interfaces
     local idx=0
     for sf in "${sf_intfs[@]}"; do
-        # Split the struct to get interface name
-        IFS='|' read -r name state addr mask mac <<< "$sf"
+        # Split the struct to get interface name and mac
+        IFS='|' read -r name state _ _ mac <<< "$sf"
 
-        # Calculate ip2 and ip3 based on index
-        local new_ip2=$((ip2 + (idx / 251)))
-        local new_ip3=$((ip3 + (idx % 251)))
+        # Split MAC address into parts
+        IFS=':' read -r _ _ _ mac4 mac5 mac6 <<< "$mac"
 
-        # Ensure ip3 doesn't exceed 250
-        if [ $new_ip3 -gt 250 ]; then
-            echo "Error: IP address calculation would exceed maximum ip3 value of 250"
+        # Convert hex to decimal
+        ip2=$((16#$mac4))
+        ip3=$((16#$mac5))
+        ip4=$((16#$mac6))
+
+        # Validate ip4 matches the expected value
+        if [ $ip4 -ne $expected_ip4 ]; then
+            echo "Error: MAC address $mac has ip4=$ip4, but expected ip4=$expected_ip4 for role '$role'"
             exit 1
         fi
 
         # Create IP address string
-        local new_addr=$(printf '%d.%d.%d.%d' $ip1 $new_ip2 $new_ip3 $ip4)
+        local new_addr=$(printf '%d.%d.%d.%d' $ip1 $ip2 $ip3 $ip4)
 
         echo "Bringing up SF interface $name"
+        echo "  MAC: $mac"
         echo "  IP: $new_addr/$netmask"
-        nic_up "$name" "$ip1" "$new_ip2" "$new_ip3" "$ip4" "$netmask"
+        nic_up "$name" "$ip1" "$ip2" "$ip3" "$ip4" "$netmask"
 
         # Get the latest interface state
         local new_state=$(get_interface_state "$name")
@@ -329,11 +343,7 @@ while true; do
                 echo "Error: -u option requires 'src' or 'dst' parameter"
                 usage
             fi
-            if [[ "$2" == "src" ]]; then
-                ip4=1
-            else
-                ip4=2
-            fi
+            role="$2"
             shift 2
             sf_intf_get
             sf_intf_bringup
