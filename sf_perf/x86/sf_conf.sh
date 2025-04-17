@@ -288,6 +288,10 @@ function sf_intf_bringdown() {
         sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "" "" "" "" "" "")"
         ((idx++))
     done
+
+    # Flush all ARP entries
+    echo "Flushing all ARP entries..."
+    ip neigh flush all
 }
 
 function sf_intf_conn_check() {
