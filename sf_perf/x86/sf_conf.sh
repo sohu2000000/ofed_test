@@ -24,9 +24,10 @@ function create_sf_intf() {
     local sf_num="$6"
     local host_type="$7"
     local peer_ip="$8"
+    local peer_mac="$9"
     # Create a new struct with all fields
     # Use a different delimiter (|) to avoid issues with MAC address colons
-    echo "$sf_name|$sf_state|$sf_addr|$sf_mask|$sf_mac|$sf_num|$host_type|$peer_ip"
+    echo "$sf_name|$sf_state|$sf_addr|$sf_mask|$sf_mac|$sf_num|$host_type|$peer_ip|$peer_mac"
 }
 
 function sf_intf_show() {
@@ -37,13 +38,16 @@ function sf_intf_show() {
     local idx=0
     for sf in "${sf_intfs[@]}"; do
         # Split the struct into all fields using | as delimiter
-        IFS='|' read -r name state addr mask mac sf_num host_type peer_ip <<< "$sf"
+        IFS='|' read -r name state addr mask mac sf_num host_type peer_ip peer_mac <<< "$sf"
         echo "SF Interface [$idx]:"
         echo "  Name: $name"
         echo "  State: $state"
-        echo "  MAC: $mac"
         echo "  SF_NUM: $sf_num"
         echo "  HOST_TYPE: $host_type"
+        echo "  MAC: $mac"
+        if [ -n "$peer_mac" ]; then
+            echo "  PEER_MAC: $peer_mac"
+        fi
         if [ -n "$addr" ] && [ -n "$mask" ]; then
             echo "  IP: $addr/$mask"
             if [ -n "$peer_ip" ]; then
@@ -149,9 +153,10 @@ function sf_intf_get() {
             intf_sf_num="N/A"
             intf_host_type="N/A"
             intf_peer_ip=""
+            intf_peer_mac=""
             if [ "$intf_mac" != "N/A" ]; then
                 # Split MAC address into parts
-                IFS=':' read -r _ _ _ mac4 mac5 mac6 <<< "$intf_mac"
+                IFS=':' read -r mac1 mac2 mac3 mac4 mac5 mac6 <<< "$intf_mac"
 
                 # Convert hex to decimal and calculate sf_num
                 mac4_dec=$((16#$mac4))
@@ -170,14 +175,15 @@ function sf_intf_get() {
                     intf_host_type="unknown"
                 fi
 
-                # Calculate peer_ip if we have a valid host_type
+                # Calculate peer_ip and peer_mac if we have a valid host_type
                 if [ "$intf_host_type" != "unknown" ]; then
                     intf_peer_ip=$(printf '%d.%d.%d.%d' 11 $mac4_dec $mac5_dec $peer_ip4)
+                    intf_peer_mac=$(printf '%s:%s:%s:%s:%s:%02x' $mac1 $mac2 $mac3 $mac4 $mac5 $peer_ip4)
                 fi
             fi
 
             # Create a new sf_intf struct and add it to the array
-            sf_intfs+=("$(create_sf_intf "$intf" "$intf_state" "$intf_addr" "$intf_mask" "$intf_mac" "$intf_sf_num" "$intf_host_type" "$intf_peer_ip")")
+            sf_intfs+=("$(create_sf_intf "$intf" "$intf_state" "$intf_addr" "$intf_mask" "$intf_mac" "$intf_sf_num" "$intf_host_type" "$intf_peer_ip" "$intf_peer_mac")")
         fi
     done
 }
@@ -216,10 +222,10 @@ function sf_intf_bringup() {
     local idx=0
     for sf in "${sf_intfs[@]}"; do
         # Split the struct to get interface name and mac
-        IFS='|' read -r name state _ _ mac _ host_type _ <<< "$sf"
+        IFS='|' read -r name state _ _ mac _ host_type _ _ <<< "$sf"
 
         # Split MAC address into parts
-        IFS=':' read -r _ _ _ mac4 mac5 mac6 <<< "$mac"
+        IFS=':' read -r mac1 mac2 mac3 mac4 mac5 mac6 <<< "$mac"
 
         # Convert hex to decimal
         ip2=$((16#$mac4))
@@ -236,17 +242,21 @@ function sf_intf_bringup() {
         local new_addr=$(printf '%d.%d.%d.%d' $ip1 $ip2 $ip3 $ip4)
         local new_peer_ip=$(printf '%d.%d.%d.%d' $ip1 $ip2 $ip3 $peer_ip4)
 
+        # Create peer MAC address string
+        local new_peer_mac=$(printf '%s:%s:%s:%s:%s:%02x' $mac1 $mac2 $mac3 $mac4 $mac5 $peer_ip4)
+
         echo "Bringing up SF interface $name"
         echo "  MAC: $mac"
         echo "  IP: $new_addr/$netmask"
-        echo "  PEER_IP: $new_peer_ip"
+        echo "  PEER_IP: $new_peer_ip/$netmask"
+        echo "  PEER_MAC: $new_peer_mac"
         nic_up "$name" "$ip1" "$ip2" "$ip3" "$ip4" "$netmask"
 
         # Get the latest interface state
         local new_state=$(get_interface_state "$name")
 
-        # Update the sf_intf struct with all fields including peer_ip
-        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "$new_addr" "$netmask" "$mac" "$intf_sf_num" "$host_type" "$new_peer_ip")"
+        # Update the sf_intf struct with all fields including peer_ip and peer_mac
+        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "$new_addr" "$netmask" "$mac" "$intf_sf_num" "$host_type" "$new_peer_ip" "$new_peer_mac")"
         ((idx++))
     done
 
@@ -301,7 +311,7 @@ function sf_intf_conn_check() {
     local idx=0
     for sf in "${sf_intfs[@]}"; do
         # Split the struct to get interface info
-        IFS='|' read -r name state addr mask mac peer_ip <<< "$sf"
+        IFS='|' read -r name state addr mask mac peer_ip peer_mac <<< "$sf"
 
         # Skip if interface has no IP address
         if [ -z "$addr" ] || [ -z "$mask" ]; then
