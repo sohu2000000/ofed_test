@@ -63,18 +63,28 @@ function unbind_bind(){
 function set_mac_addr(){
 	local pci_sf=$1
 	local physicalfn=$2
+	local sf_num=$3
 	local mac_addr=""
+	local mac3="4d"
+	local mac4
+	local mac5
+	local mac6="01"
 
+	echo "sf_num: $sf_num"
 	pre_mac=$(cat /sys/class/net/$physicalfn/address | cut -d: -f1-2)
+	echo "pre_mac: $pre_mac"
 
-                for i in {1..4}; do
-                random_2_chars=`cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 2 | head -1`
-                mac_addr="$mac_addr:$random_2_chars"
-                done
-                mac_addr="$pre_mac$mac_addr"
+	# Calculate mac4 and mac5 based on sf_num
+	mac4=$(printf "%02x" $((sf_num / 256)))
+	mac5=$(printf "%02x" $((sf_num % 256)))
+	echo "mac4: $mac4, mac5: $mac5"
+
+	mac_addr="$mac3:$mac4:$mac5:$mac6"
+	echo "mac_addr: $mac_addr"
+	mac_addr="$pre_mac:$mac_addr"
+	echo "mac_addr: $mac_addr"
 
 	run_cmd "devlink port function set $pci_sf hw_addr $mac_addr"
-
 }
 
 function active_sf(){
@@ -134,7 +144,7 @@ function create_mdev(){
            #pci_uniq="$first_st:$second_st:$thread_st"
 
 	   echo "Set mac address for SF interface"
-	       set_mac_addr $pci_uniq $ifs
+	       set_mac_addr $pci_uniq $ifs $mdev
 
 
 	   echo "activate the SF interface"
