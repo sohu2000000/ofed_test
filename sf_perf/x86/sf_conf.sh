@@ -331,7 +331,7 @@ function sf_intf_conn_check() {
                 echo "  Retry attempt $retry/$max_retries..."
             fi
 
-            if ping -c 3 -W 100 $peer_addr > /dev/null 2>&1; then
+            if ping -c 1 -W 100 $peer_addr > /dev/null 2>&1; then
                 echo "  Status: Connected ✓"
                 ping_success=1
                 ((success_count++))
