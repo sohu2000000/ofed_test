@@ -8,6 +8,7 @@ CREATE_FLAG=false
 NUM_PORTS=""
 DELETE_FLAG=false
 SHOW_FLAG=false
+HOST_TYPE=""
 
 function usage() {
 	exit 1
@@ -277,10 +278,15 @@ function ovs_br_delete() {
 function print_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "Options:"
-    echo "  --add, -a NUMBER    Add SF ports with specified number"
-    echo "  --delete, -d        Delete SF ports and OVS bridge (no arguments)"
-    echo "  --show, -s          Show SF ports information (no arguments)"
-    echo "  --help, -h          Print this help message"
+    echo "  --add, -a NUM_PORT HOST_TYPE    Add SF ports (HOST_TYPE must be 'src' or 'dst')"
+    echo "  --delete, -d                    Delete SF ports and OVS bridge (no arguments)"
+    echo "  --show, -s                      Show SF ports information (no arguments)"
+    echo "  --help, -h                      Print this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0 -a 2 src                     Add 2 source ports"
+    echo "  $0 -a 1 dst                     Add 1 destination port"
+    echo "  $0 -d                           Delete all ports"
     exit 1
 }
 
@@ -288,13 +294,22 @@ function print_usage() {
 while [[ $# -gt 0 ]]; do
     case $1 in
         --add|-a)
-            if [[ -z "$2" || ! "$2" =~ ^[0-9]+$ ]]; then
-                echo "Error: --add/-a requires a valid number"
+            if [[ -z "$2" || -z "$3" ]]; then
+                echo "Error: --add/-a requires two arguments: NUM_PORT and HOST_TYPE (src/dst)"
+                print_usage
+            fi
+            if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+                echo "Error: NUM_PORT must be a number"
+                print_usage
+            fi
+            if [[ "$3" != "src" && "$3" != "dst" ]]; then
+                echo "Error: HOST_TYPE must be either 'src' or 'dst'"
                 print_usage
             fi
             CREATE_FLAG=true
             NUM_PORTS="$2"
-            shift 2
+            HOST_TYPE="$3"
+            shift 3
             ;;
         --delete|-d)
             if [[ -n "$2" && ! "$2" =~ ^- ]]; then
@@ -324,8 +339,8 @@ done
 
 # Validate arguments
 if $CREATE_FLAG; then
-    if [[ -z "$NUM_PORTS" ]]; then
-        echo "Error: --add/-a requires a number argument"
+    if [[ -z "$NUM_PORTS" || -z "$HOST_TYPE" ]]; then
+        echo "Error: --add/-a requires both NUM_PORT and HOST_TYPE arguments"
         print_usage
     fi
 fi
