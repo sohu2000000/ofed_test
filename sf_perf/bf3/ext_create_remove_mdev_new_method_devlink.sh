@@ -152,25 +152,32 @@ function set_mac_addr(){
 	local pci_sf=$1
 	local physicalfn=$2
 	local sf_num=$3
+	local host_type=$4
 	local mac_addr=""
 	local mac3="4d"
 	local mac4
 	local mac5
-	local mac6="01"
+	local mac6
 
-	echo "sf_num: $sf_num"
 	pre_mac=$(cat /sys/class/net/$physicalfn/address | cut -d: -f1-2)
-	echo "pre_mac: $pre_mac"
 
 	# Calculate mac4 and mac5 based on sf_num
 	mac4=$(printf "%02x" $((sf_num / 256)))
 	mac5=$(printf "%02x" $((sf_num % 256)))
-	echo "mac4: $mac4, mac5: $mac5"
+
+	# Set mac6 based on host_type
+	if [ "$host_type" = "src" ]; then
+		mac6="01"
+	elif [ "$host_type" = "dst" ]; then
+		mac6="02"
+	else
+		echo "Error: Invalid host_type. Must be 'src' or 'dst'"
+		exit 1
+	fi
 
 	mac_addr="$mac3:$mac4:$mac5:$mac6"
-	echo "mac_addr: $mac_addr"
 	mac_addr="$pre_mac:$mac_addr"
-	echo "mac_addr: $mac_addr"
+	echo "mac_addr: $mac_addr  (host_type: $host_type)"
 
 	run_cmd "devlink port function set $pci_sf hw_addr $mac_addr"
 }
@@ -189,6 +196,7 @@ function create_mdev(){
 	local ifs=$1
 	local mdevs=$2
 	local pci_device=$3
+	local host_type=$4
 	#local new_uuid=""
 	#local max_mdev=$(get_maxmdev)
 	#local available_mdev=$(get_available)
@@ -232,7 +240,7 @@ function create_mdev(){
            #pci_uniq="$first_st:$second_st:$thread_st"
 
 	   echo "Set mac address for SF interface"
-	       set_mac_addr $pci_uniq $ifs $mdev
+	       set_mac_addr $pci_uniq $ifs $mdev $host_type
 
 
 	   echo "activate the SF interface"
@@ -247,12 +255,8 @@ function create_mdev(){
 
 		# fi
 	    #done
-
-	echo
-	done
-
-echo done..
-
+     done
+     echo "done.."
 }
 
 
@@ -274,5 +278,5 @@ if $DELETE_FLAG; then
     remove_mdev "$PCI_DEVICE"
 else
     ifs=$(get_ifs_by_pci "$PCI_DEVICE")
-    create_mdev "$ifs" "$NUM_PORTS" "$PCI_DEVICE"
+    create_mdev "$ifs" "$NUM_PORTS" "$PCI_DEVICE" "$HOST_TYPE"
 fi
