@@ -2,6 +2,94 @@
 RED="\033[0;31m"
 BLUE="\033[0;34m"
 
+# Global variables
+PCI_DEVICE=""
+NUM_PORTS=""
+HOST_TYPE=""
+DELETE_FLAG=false
+
+function print_usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo "Options:"
+    echo "  -p, --pci PCI_DEVICE    PCI device address (required)"
+    echo "  -n, --num NUM_PORTS     Number of ports to create (required for create)"
+    echo "  -t, --type HOST_TYPE    Host type (src/dst) (required for create)"
+    echo "  -d, --delete            Delete ports (no arguments)"
+    echo "  -h, --help              Print this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0 -p 0000:03:00.0 -n 2 -t src    Create 2 source ports"
+    echo "  $0 -p 0000:03:00.0 -n 1 -t dst    Create 1 destination port"
+    echo "  $0 -p 0000:03:00.0 -d             Delete all ports"
+    exit 1
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -p|--pci)
+            if [[ -z "$2" ]]; then
+                echo "Error: -p/--pci requires PCI device address"
+                print_usage
+            fi
+            PCI_DEVICE="$2"
+            shift 2
+            ;;
+        -n|--num)
+            if [[ -z "$2" ]]; then
+                echo "Error: -n/--num requires number of ports"
+                print_usage
+            fi
+            if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+                echo "Error: NUM_PORTS must be a number"
+                print_usage
+            fi
+            NUM_PORTS="$2"
+            shift 2
+            ;;
+        -t|--type)
+            if [[ -z "$2" ]]; then
+                echo "Error: -t/--type requires host type (src/dst)"
+                print_usage
+            fi
+            if [[ "$2" != "src" && "$2" != "dst" ]]; then
+                echo "Error: HOST_TYPE must be either 'src' or 'dst'"
+                print_usage
+            fi
+            HOST_TYPE="$2"
+            shift 2
+            ;;
+        -d|--delete)
+            DELETE_FLAG=true
+            shift
+            ;;
+        -h|--help)
+            print_usage
+            ;;
+        *)
+            echo "Error: Unknown option $1"
+            print_usage
+            ;;
+    esac
+done
+
+# Validate arguments
+if [ -z "$PCI_DEVICE" ]; then
+    echo "Error: PCI device address is required"
+    print_usage
+fi
+
+if $DELETE_FLAG; then
+    if [ -n "$NUM_PORTS" ] || [ -n "$HOST_TYPE" ]; then
+        echo "Error: --delete does not accept NUM_PORTS or HOST_TYPE"
+        print_usage
+    fi
+else
+    if [ -z "$NUM_PORTS" ] || [ -z "$HOST_TYPE" ]; then
+        echo "Error: Both NUM_PORTS and HOST_TYPE are required for create"
+        print_usage
+    fi
+fi
 
 function usage(){
         echo -e "This script will Create or Remove VFIO Mediated devices \n"
@@ -181,55 +269,10 @@ function remove_mdev(){
   exit 0;
 }
 
-#Main
-
-if [[ -z $1 ]] ; then usage ; exit 1 ; fi
-if [[ -n $1 ]] && [[ -z $2 ]] ; then usage ; exit 1 ; fi
-
-#Check flags arguments
-while [[ $# -gt 0 ]]
- do
-        key="$1"
-
- case $key in
-    -p|--pci_device)
-    pci_device="$2"
-    shift # past argument
-    ;;
-
-    -n|--num_mdev)
-    mdev=${2:-1}
-    shift # past argument
-    ;;
-
-    -r|--pci_device)
-    pci_device="$2"
-    shift #past argument
-    remove_mdev $pci_device
-	#Remove uuid configured
-    ;;
-
-    -h|--help|*)
-	echo "Error, unsupported parameter: $1"
-        usage
-        exit 1
-            # unknown option
-    ;;
-
- esac
- shift # past argument or value
-done
-
-
-#get_fw_state=$(verify_mdev_enable_in_fw $pci_device)
-#if [ "$get_fw_state" != "True" ]; then
-#        echo "The PER_PF_NUM_SF flag is Disabled in the FW please Enable it before."
-#        exit
-#fi
-
-
-ifs=$(get_ifs_by_pci $pci_device)
-
-#Go to Create.
-
-create_mdev $ifs $mdev $pci_device
+# Main logic
+if $DELETE_FLAG; then
+    remove_mdev "$PCI_DEVICE"
+else
+    ifs=$(get_ifs_by_pci "$PCI_DEVICE")
+    create_mdev "$ifs" "$NUM_PORTS" "$PCI_DEVICE"
+fi

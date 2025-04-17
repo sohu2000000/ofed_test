@@ -127,9 +127,15 @@ function rep_intf_create() {
 	local script_dir=$(dirname "$0")
 	local script_path="$script_dir/ext_create_remove_mdev_new_method_devlink.sh"
 	local num_ports="$1"
+	local host_type="$2"
 
 	if [ -z "$num_ports" ]; then
 		echo "Error: Number of ports not specified"
+		return 1
+	fi
+
+	if [ -z "$host_type" ]; then
+		echo "Error: Host type not specified"
 		return 1
 	fi
 
@@ -143,8 +149,8 @@ function rep_intf_create() {
 	chmod +x "$script_path"
 
 	# Execute the script to create SF ports
-	echo "Running: $script_path -p $PCI_ECPF0 -n $num_ports"
-	"$script_path" -p "$PCI_ECPF0" -n "$num_ports"
+	echo "Running: $script_path -p $PCI_ECPF0 -n $num_ports -t $host_type"
+	"$script_path" -p "$PCI_ECPF0" -n "$num_ports" -t "$host_type"
 	if [ $? -ne 0 ]; then
 		echo "Error: Failed to create SF ports"
 		return 2
@@ -347,7 +353,7 @@ fi
 
 # Main logic
 if $CREATE_FLAG; then
-    rep_intf_create "$NUM_PORTS"
+    rep_intf_create "$NUM_PORTS" "$HOST_TYPE"
     if [ $? -ne 0 ]; then
         echo "Error: Failed to create SF ports"
         exit 1
