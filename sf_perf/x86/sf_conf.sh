@@ -21,9 +21,11 @@ function create_sf_intf() {
     local sf_addr="$3"
     local sf_mask="$4"
     local sf_mac="$5"
-    # Create a new struct with sf_name, sf_state, addr, mask and mac
+    local sf_num="$6"
+    local host_type="$7"
+    # Create a new struct with sf_name, sf_state, addr, mask, mac, sf_num and host_type
     # Use a different delimiter (|) to avoid issues with MAC address colons
-    echo "$sf_name|$sf_state|$sf_addr|$sf_mask|$sf_mac"
+    echo "$sf_name|$sf_state|$sf_addr|$sf_mask|$sf_mac|$sf_num|$host_type"
 }
 
 function sf_intf_show() {
@@ -33,12 +35,14 @@ function sf_intf_show() {
     echo "----------------------------"
     local idx=0
     for sf in "${sf_intfs[@]}"; do
-        # Split the struct into name, state, addr, mask and mac using | as delimiter
-        IFS='|' read -r name state addr mask mac <<< "$sf"
+        # Split the struct into name, state, addr, mask, mac, sf_num and host_type using | as delimiter
+        IFS='|' read -r name state addr mask mac sf_num host_type <<< "$sf"
         echo "SF Interface [$idx]:"
         echo "  Name: $name"
         echo "  State: $state"
         echo "  MAC: $mac"
+        echo "  SF_NUM: $sf_num"
+        echo "  HOST_TYPE: $host_type"
         if [ -n "$addr" ] && [ -n "$mask" ]; then
             echo "  IP: $addr/$mask"
         else
@@ -137,8 +141,31 @@ function sf_intf_get() {
                 intf_mac="N/A"
             fi
 
+            # Calculate sf_num and host_type from MAC address
+            intf_sf_num="N/A"
+            intf_host_type="N/A"
+            if [ "$intf_mac" != "N/A" ]; then
+                # Split MAC address into parts
+                IFS=':' read -r _ _ _ mac4 mac5 mac6 <<< "$intf_mac"
+
+                # Convert hex to decimal and calculate sf_num
+                mac4_dec=$((16#$mac4))
+                mac5_dec=$((16#$mac5))
+                intf_sf_num=$((mac4_dec * 256 + mac5_dec))
+
+                # Calculate host_type based on mac6
+                mac6_dec=$((16#$mac6))
+                if [ $mac6_dec -eq 1 ]; then
+                    intf_host_type="src"
+                elif [ $mac6_dec -eq 2 ]; then
+                    intf_host_type="dst"
+                else
+                    intf_host_type="unknown"
+                fi
+            fi
+
             # Create a new sf_intf struct and add it to the array
-            sf_intfs+=("$(create_sf_intf "$intf" "$intf_state" "$intf_addr" "$intf_mask" "$intf_mac")")
+            sf_intfs+=("$(create_sf_intf "$intf" "$intf_state" "$intf_addr" "$intf_mask" "$intf_mac" "$intf_sf_num" "$intf_host_type")")
         fi
     done
 }
@@ -174,7 +201,7 @@ function sf_intf_bringup() {
     local idx=0
     for sf in "${sf_intfs[@]}"; do
         # Split the struct to get interface name and mac
-        IFS='|' read -r name state _ _ mac <<< "$sf"
+        IFS='|' read -r name state _ _ mac _ host_type <<< "$sf"
 
         # Split MAC address into parts
         IFS=':' read -r _ _ _ mac4 mac5 mac6 <<< "$mac"
@@ -202,7 +229,7 @@ function sf_intf_bringup() {
         local new_state=$(get_interface_state "$name")
 
         # Update the sf_intf struct with the new IP, mask and state
-        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "$new_addr" "$netmask" "$mac")"
+        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "$new_addr" "$netmask" "$mac" "$intf_sf_num" "$host_type")"
         ((idx++))
     done
 
@@ -231,7 +258,7 @@ function sf_intf_bringdown() {
         local new_state=$(get_interface_state "$name")
 
         # Update the sf_intf struct with empty IP and mask, and new state
-        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "" "" "")"
+        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "" "" "" "" "")"
         ((idx++))
     done
 }
