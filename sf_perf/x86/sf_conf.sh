@@ -16,12 +16,14 @@ sf_intfs=()
 
 # Function to create a new sf_intf struct
 function create_sf_intf() {
-    local sf_name=$1
-    local sf_state=$2
-    local sf_addr=$3
-    local sf_mask=$4
-    # Create a new struct with sf_name, sf_state, addr and mask
-    echo "$sf_name $sf_state $sf_addr $sf_mask"
+    local sf_name="$1"
+    local sf_state="$2"
+    local sf_addr="$3"
+    local sf_mask="$4"
+    local sf_mac="$5"
+    # Create a new struct with sf_name, sf_state, addr, mask and mac
+    # Use a different delimiter (|) to avoid issues with MAC address colons
+    echo "$sf_name|$sf_state|$sf_addr|$sf_mask|$sf_mac"
 }
 
 function sf_intf_show() {
@@ -31,11 +33,12 @@ function sf_intf_show() {
     echo "----------------------------"
     local idx=0
     for sf in "${sf_intfs[@]}"; do
-        # Split the struct into name, state, addr and mask
-        IFS=' ' read -r name state addr mask <<< "$sf"
+        # Split the struct into name, state, addr, mask and mac using | as delimiter
+        IFS='|' read -r name state addr mask mac <<< "$sf"
         echo "SF Interface [$idx]:"
         echo "  Name: $name"
         echo "  State: $state"
+        echo "  MAC: $mac"
         if [ -n "$addr" ] && [ -n "$mask" ]; then
             echo "  IP: $addr/$mask"
         else
@@ -124,8 +127,18 @@ function sf_intf_get() {
                 intf_mask=$(echo $ip_info | cut -d'/' -f2)
             fi
 
+            # Get MAC address
+            if [ -f "/sys/class/net/$intf/address" ]; then
+                intf_mac=$(cat "/sys/class/net/$intf/address" 2>/dev/null)
+                if [ -z "$intf_mac" ]; then
+                    intf_mac="N/A"
+                fi
+            else
+                intf_mac="N/A"
+            fi
+
             # Create a new sf_intf struct and add it to the array
-            sf_intfs+=("$(create_sf_intf "$intf" "$intf_state" "$intf_addr" "$intf_mask")")
+            sf_intfs+=("$(create_sf_intf "$intf" "$intf_state" "$intf_addr" "$intf_mask" "$intf_mac")")
         fi
     done
 }
@@ -152,7 +165,7 @@ function sf_intf_bringup() {
     local idx=0
     for sf in "${sf_intfs[@]}"; do
         # Split the struct to get interface name
-        IFS=' ' read -r name state _ _ <<< "$sf"
+        IFS='|' read -r name state addr mask mac <<< "$sf"
 
         # Calculate ip2 and ip3 based on index
         local new_ip2=$((ip2 + (idx / 251)))
@@ -175,7 +188,7 @@ function sf_intf_bringup() {
         local new_state=$(get_interface_state "$name")
 
         # Update the sf_intf struct with the new IP, mask and state
-        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "$new_addr" "$netmask")"
+        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "$new_addr" "$netmask" "$mac")"
         ((idx++))
     done
 
@@ -195,7 +208,7 @@ function sf_intf_bringdown() {
     local idx=0
     for sf in "${sf_intfs[@]}"; do
         # Split the struct to get interface name
-        IFS=' ' read -r name state _ _ <<< "$sf"
+        IFS='|' read -r name state addr mask mac <<< "$sf"
 
         echo "Bringing down SF interface $name"
         nic_down "$name"
@@ -204,7 +217,7 @@ function sf_intf_bringdown() {
         local new_state=$(get_interface_state "$name")
 
         # Update the sf_intf struct with empty IP and mask, and new state
-        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "" "")"
+        sf_intfs[$idx]="$(create_sf_intf "$name" "$new_state" "" "" "")"
         ((idx++))
     done
 }
@@ -230,7 +243,7 @@ function sf_intf_conn_check() {
     local idx=0
     for sf in "${sf_intfs[@]}"; do
         # Split the struct to get interface info
-        IFS=' ' read -r name state addr mask <<< "$sf"
+        IFS='|' read -r name state addr mask mac <<< "$sf"
 
         # Skip if interface has no IP address
         if [ -z "$addr" ] || [ -z "$mask" ]; then
