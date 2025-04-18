@@ -70,6 +70,7 @@ usage() {
     echo "  -d              Bring down SF interfaces"
     echo "  -s              Show SF interfaces information"
     echo "  -t, --test [src|dst]  Test SF interfaces connectivity"
+    echo "  -p, --perf [server|client]  Run iperf on SF interfaces"
     echo "  -h              Show this help message"
     exit 1
 }
@@ -359,8 +360,57 @@ function sf_intf_conn_check() {
     fi
 }
 
+function sf_intf_runperf() {
+    local role=$1
+    if [ -z "$role" ]; then
+        echo "Error: Role parameter is required (server or client)"
+        return 1
+    fi
+    if [[ "$role" != "server" && "$role" != "client" ]]; then
+        echo "Error: Invalid role '$role', should be 'server' or 'client'"
+        return 1
+    fi
+
+    echo "=== Running iperf on SF Interfaces ==="
+    local total_count=${#sf_intfs[@]}
+    echo "Total SF interfaces to run iperf: $total_count"
+    echo "----------------------------"
+
+    local idx=0
+    for sf in "${sf_intfs[@]}"; do
+        # Split the struct to get interface info
+        IFS='|' read -r name state addr mask mac sf_num host_type peer_ip peer_mac <<< "$sf"
+
+        # Skip if interface has no IP address
+        if [ -z "$addr" ] || [ -z "$mask" ]; then
+            echo "SF Interface [$idx] $name: No IP address configured"
+            ((idx++))
+            continue
+        fi
+
+        # Calculate port number
+        local port=$((5000 + sf_num))
+
+        if [ "$role" = "server" ]; then
+            echo "SF Interface [$idx] $name: Starting iperf server on port $port"
+            iperf -s -i 1 -B "$addr" -p "$port" &
+        else
+            if [ -z "$peer_ip" ]; then
+                echo "SF Interface [$idx] $name: No peer IP configured"
+                ((idx++))
+                continue
+            fi
+            echo "SF Interface [$idx] $name: Starting iperf client to $peer_ip on port $port"
+            iperf -c "$peer_ip" -B "$addr" -i 1 -p "$port" -t 1000 &
+        fi
+
+        ((idx++))
+    done
+    echo "========================================"
+}
+
 # Parse command line arguments
-TEMP=$(getopt -o 'u:dst:h' --long 'test:,help' -n "$0" -- "$@") || {
+TEMP=$(getopt -o 'u:dst:p:h' --long 'test:,perf:,help' -n "$0" -- "$@") || {
     # getopt will output error message
     usage
     exit 1
@@ -410,6 +460,20 @@ while true; do
             fi
             sf_intf_get
             sf_intf_conn_check "$2"
+            shift 2
+            exit 0
+            ;;
+        '-p'|'--perf')
+            if [ -z "$2" ]; then
+                echo "Error: -p/--perf option requires 'server' or 'client' parameter"
+                usage
+            fi
+            if [[ "$2" != "server" && "$2" != "client" ]]; then
+                echo "Error: -p/--perf option requires 'server' or 'client' parameter"
+                usage
+            fi
+            sf_intf_get
+            sf_intf_runperf "$2"
             shift 2
             exit 0
             ;;
