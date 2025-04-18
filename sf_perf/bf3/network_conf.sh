@@ -217,6 +217,15 @@ function ovs_br_create() {
 		fi
 	done
 
+	# Bring up all SF representor ports
+	echo "Bringing up all SF representor ports..."
+	for i in $(ip -o link show | awk -F': ' '{print $2}' | grep -v lo); do
+		ip link set dev "$i" up
+		if [ $? -ne 0 ]; then
+			echo "Warning: Failed to bring up interface $i"
+		fi
+	done
+
 	# Show OVS configuration
 	echo -e "\nOVS bridge configuration:"
 	ovs-vsctl show

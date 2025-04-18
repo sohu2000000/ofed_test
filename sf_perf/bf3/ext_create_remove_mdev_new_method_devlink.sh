@@ -154,12 +154,12 @@ function set_mac_addr(){
 	local sf_num=$3
 	local host_type=$4
 	local mac_addr=""
+	local mac1="94"
+	local mac2="6d"
 	local mac3="4d"
 	local mac4
 	local mac5
 	local mac6
-
-	pre_mac=$(cat /sys/class/net/$physicalfn/address | cut -d: -f1-2)
 
 	# Calculate mac4 and mac5 based on sf_num
 	mac4=$(printf "%02x" $((sf_num / 256)))
@@ -175,8 +175,7 @@ function set_mac_addr(){
 		exit 1
 	fi
 
-	mac_addr="$mac3:$mac4:$mac5:$mac6"
-	mac_addr="$pre_mac:$mac_addr"
+	mac_addr="$mac1:$mac2:$mac3:$mac4:$mac5:$mac6"
 	echo "mac_addr: $mac_addr  (host_type: $host_type)"
 
 	run_cmd "devlink port function set $pci_sf hw_addr $mac_addr"
