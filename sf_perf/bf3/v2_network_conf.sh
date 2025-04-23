@@ -74,8 +74,8 @@ function rep_intf_get() {
 		elif [[ $in_function_block == true && $line =~ hw_addr\ ([0-9a-f:]+) ]]; then
 			current_hw_addr="${BASH_REMATCH[1]}"
 
-			# Only add SF ports and skip eth0
-			if [ "$is_sf_port" = true ] && [ "$current_name" != "eth0" ] && [ -n "$current_name" ] && [ -n "$current_hw_addr" ] && [ -n "$current_sfnum" ]; then
+			# Only add SF ports
+			if [ "$is_sf_port" = true ] && [ -n "$current_name" ] && [ -n "$current_hw_addr" ] && [ -n "$current_sfnum" ]; then
 				rep_intfs[$idx]=$(rep_intf_init "$current_name" "$current_index" "$current_hw_addr" "$current_sfnum")
 				((idx++))
 				# Reset flags after adding the port
