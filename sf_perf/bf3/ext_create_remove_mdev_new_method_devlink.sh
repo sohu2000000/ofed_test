@@ -237,10 +237,9 @@ function create_mdev(){
            #thread_st=$( mlxdevm port show | grep -i "pfnum $port_number sfnum $mdev"  | awk '{print$1}' | cut -d ":" -f3 )
            #pci_uniq=echo "$output" | cut -d' ' -f1 | sed 's/:$//'
            #pci_uniq="$first_st:$second_st:$thread_st"
-
+	   sleep 0.5
 	   echo "Set mac address for SF interface"
 	       set_mac_addr $pci_uniq $ifs $mdev $host_type
-
 
 	   echo "activate the SF interface"
 	         active_sf  $pci_uniq
