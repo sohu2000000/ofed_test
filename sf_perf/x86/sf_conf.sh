@@ -368,12 +368,12 @@ function sf_intf_runperf() {
     fi
     if [[ "$role" != "server" && "$role" != "client" ]]; then
         echo "Error: Invalid role '$role', should be 'server' or 'client'"
-        return 1
+        usage
     fi
 
-    echo "=== Running iperf on SF Interfaces ==="
+    echo "=== Running iperf3 on SF Interfaces ==="
     local total_count=${#sf_intfs[@]}
-    echo "Total SF interfaces to run iperf: $total_count"
+    echo "Total SF interfaces to run iperf3: $total_count"
     echo "----------------------------"
 
     local idx=0
@@ -392,16 +392,16 @@ function sf_intf_runperf() {
         local port=$((5000 + sf_num))
 
         if [ "$role" = "server" ]; then
-            echo "SF Interface [$idx] $name: Starting iperf server on port $port"
-            iperf -s -i 1 -B "$addr" -p "$port" &
+            echo "SF Interface [$idx] $name: Starting iperf3 server on port $port"
+            iperf3 -s -1 -i 30 -B "$addr" -p "$port" &
         else
             if [ -z "$peer_ip" ]; then
                 echo "SF Interface [$idx] $name: No peer IP configured"
                 ((idx++))
                 continue
             fi
-            echo "SF Interface [$idx] $name: Starting iperf client to $peer_ip on port $port"
-            iperf -c "$peer_ip" -B "$addr" -i 1 -p "$port" -t 1000 &
+            echo "SF Interface [$idx] $name: Starting iperf3 client to $peer_ip on port $port"
+            iperf3 -c "$peer_ip" -t 30 -l 65536 -B "$addr" -4 -p "$port" &
         fi
 
         ((idx++))
