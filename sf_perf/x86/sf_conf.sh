@@ -421,7 +421,21 @@ function sf_intf_runperf() {
     # 如果是客户端模式，分析结果
     if [ "$role" = "client" ]; then
         echo "=== iperf3 Test Results ==="
+        echo "Raw results:"
         grep "receiver" "$temp_file"
+        echo "----------------------------"
+        echo "Bandwidth summary:"
+        # 计算带宽数量
+        bw_count=$(grep "receiver" "$temp_file" | wc -l)
+        echo "Number of bandwidth results: $bw_count"
+        # 提取带宽值和单位
+        grep "receiver" "$temp_file" | awk '{print $7, $8}'
+        echo "----------------------------"
+        echo "Total bandwidth:"
+        # 提取带宽数值并计算总和，保持单位
+        total_bw=$(grep "receiver" "$temp_file" | awk '{sum += $7} END {printf "%.2f", sum}')
+        unit=$(grep "receiver" "$temp_file" | head -n1 | awk '{print $8}')
+        echo "$total_bw $unit"
         echo "=========================="
     fi
 
