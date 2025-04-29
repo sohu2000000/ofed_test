@@ -428,14 +428,25 @@ function sf_intf_runperf() {
         # 计算带宽数量
         bw_count=$(grep "receiver" "$temp_file" | wc -l)
         echo "Number of bandwidth results: $bw_count"
-        # 提取带宽值和单位
-        grep "receiver" "$temp_file" | awk '{print $7, $8}'
+        # 提取带宽值和单位，并进行单位转换
+        grep "receiver" "$temp_file" | awk '{
+            if ($8 == "Gbits/sec") {
+                print $7, $8
+            } else if ($8 == "Mbits/sec") {
+                printf "%.3f Gbits/sec\n", $7/1000
+            }
+        }'
         echo "----------------------------"
         echo "Total bandwidth:"
-        # 提取带宽数值并计算总和，保持单位
-        total_bw=$(grep "receiver" "$temp_file" | awk '{sum += $7} END {printf "%.2f", sum}')
-        unit=$(grep "receiver" "$temp_file" | head -n1 | awk '{print $8}')
-        echo "$total_bw $unit"
+        # 提取带宽数值并计算总和，统一转换为 Gbits/sec
+        total_bw=$(grep "receiver" "$temp_file" | awk '{
+            if ($8 == "Gbits/sec") {
+                sum += $7
+            } else if ($8 == "Mbits/sec") {
+                sum += $7/1000
+            }
+        } END {printf "%.3f", sum}')
+        echo "$total_bw Gbits/sec"
         echo "=========================="
     fi
 
