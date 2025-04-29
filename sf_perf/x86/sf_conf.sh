@@ -376,6 +376,10 @@ function sf_intf_runperf() {
     echo "Total SF interfaces to run iperf3: $total_count"
     echo "----------------------------"
 
+    # 创建一个临时文件来存储所有输出
+    local temp_file=$(mktemp)
+    local pids=()
+
     local idx=0
     for sf in "${sf_intfs[@]}"; do
         # Split the struct to get interface info
@@ -394,6 +398,7 @@ function sf_intf_runperf() {
         if [ "$role" = "server" ]; then
             echo "SF Interface [$idx] $name: Starting iperf3 server on port $port"
             iperf3 -s -1 -i 30 -B "$addr" -p "$port" &
+            pids+=($!)
         else
             if [ -z "$peer_ip" ]; then
                 echo "SF Interface [$idx] $name: No peer IP configured"
@@ -401,11 +406,27 @@ function sf_intf_runperf() {
                 continue
             fi
             echo "SF Interface [$idx] $name: Starting iperf3 client to $peer_ip on port $port"
-            iperf3 -c "$peer_ip" -t 30 -l 65536 -B "$addr" -4 -p "$port" &
+            iperf3 -c "$peer_ip" -t 30 -l 65536 -B "$addr" -4 -p "$port" 2>&1 | tee -a "$temp_file" &
+            pids+=($!)
         fi
 
         ((idx++))
     done
+
+    # 等待所有 iperf3 进程完成
+    for pid in "${pids[@]}"; do
+        wait $pid
+    done
+
+    # 如果是客户端模式，分析结果
+    if [ "$role" = "client" ]; then
+        echo "=== iperf3 Test Results ==="
+        grep "receiver" "$temp_file"
+        echo "=========================="
+    fi
+
+    # 删除临时文件
+    rm "$temp_file"
     echo "========================================"
 }
 
